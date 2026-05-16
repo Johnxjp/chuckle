@@ -17,3 +17,11 @@ For example:
 
 
 More information about Huckleberry's official AI is [here](https://huckleberry.zendesk.com/hc/en-us/articles/44561361627667-What-is-Berry)
+
+## Walking skeleton smoke test (TB-1)
+
+1. Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY` (and optionally `CHUCKLE_MODEL`).
+2. `uv sync` (or `pip install -e .`).
+3. `uv run streamlit run app.py`.
+4. In the sidebar, upload `tests/fixtures/feeds_only.csv` — the sidebar should show `5 rows ingested` and the chat input should enable.
+5. Ask **"how many feeds in total?"** in the chat — expect an answer of `5`.
