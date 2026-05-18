@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 
 import streamlit as st
@@ -27,6 +28,8 @@ for key, default in (
     ("messages", []),
     ("db_ready", False),
     ("last_row_count", 0),
+    ("last_type_counts", {}),
+    ("last_warnings", []),
     ("last_upload_id", None),
     ("last_error", None),
 ):
@@ -42,15 +45,19 @@ with st.sidebar:
         upload_id = (uploaded.name, uploaded.size)
         if upload_id != st.session_state.last_upload_id:
             try:
-                events = ingest.parse_csv(uploaded)
-                row_count = db.replace_events(conn, events)
-            except Exception as exc:  # noqa: BLE001 - surface to UI; full trace in logs
+                result = ingest.parse_csv(uploaded)
+                row_count = db.replace_events(conn, result.events)
+            except Exception as exc:
                 st.session_state.last_error = str(exc)
                 st.session_state.last_row_count = 0
+                st.session_state.last_type_counts = {}
+                st.session_state.last_warnings = []
                 st.session_state.db_ready = False
             else:
                 st.session_state.last_error = None
                 st.session_state.last_row_count = row_count
+                st.session_state.last_type_counts = dict(Counter(e["type"] for e in result.events))
+                st.session_state.last_warnings = result.warnings
                 st.session_state.db_ready = row_count > 0
             st.session_state.last_upload_id = upload_id
 
@@ -60,8 +67,14 @@ with st.sidebar:
         count = st.session_state.last_row_count
         if count > 0:
             st.success(f"{count} rows ingested")
+            for type_name, cnt in sorted(st.session_state.last_type_counts.items()):
+                st.write(f"**{type_name}:** {cnt}")
+            if st.session_state.last_warnings:
+                with st.expander(f"Warnings ({len(st.session_state.last_warnings)})"):
+                    for w in st.session_state.last_warnings:
+                        st.write(w)
         else:
-            st.warning("No Feed rows found in the CSV (TB-1 ingests Feed only).")
+            st.warning("No rows found in the CSV.")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):

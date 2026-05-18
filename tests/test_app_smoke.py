@@ -11,9 +11,7 @@ from pathlib import Path
 from streamlit.testing.v1 import AppTest
 
 FIXTURE = Path(__file__).parent / "fixtures" / "feeds_only.csv"
-EMPTY_CSV = (
-    b"Type,Start,End,Duration,Start Condition,Start Location,End Condition,Notes\n"
-)
+EMPTY_CSV = b"Type,Start,End,Duration,Start Condition,Start Location,End Condition,Notes\n"
 
 
 def _new_app() -> AppTest:
@@ -32,6 +30,7 @@ def test_single_upload_ingests_and_enables_chat():
     ).run()
 
     assert at.session_state.last_row_count == 5
+    assert at.session_state.last_type_counts == {"Feed": 5}
     assert at.session_state.db_ready is True
     assert at.chat_input[0].disabled is False
     successes = [s.value for s in at.sidebar.get("success")]
@@ -51,5 +50,5 @@ def test_csv_with_no_feed_rows_warns_and_keeps_chat_disabled():
     at.sidebar.get("file_uploader")[0].upload("empty.csv", EMPTY_CSV, "text/csv").run()
 
     warnings = [w.value for w in at.sidebar.get("warning")]
-    assert warnings == ["No Feed rows found in the CSV (TB-1 ingests Feed only)."]
+    assert warnings == ["No rows found in the CSV."]
     assert at.chat_input[0].disabled is True
