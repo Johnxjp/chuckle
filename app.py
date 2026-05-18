@@ -6,6 +6,7 @@ import logging
 from collections import Counter
 from datetime import datetime
 
+import logfire
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -14,6 +15,10 @@ import db
 import ingest
 
 load_dotenv()
+
+logfire.configure()
+logfire.instrument_openai()
+logfire.instrument_sqlite3()
 
 _SORRY = "Sorry, I couldn't answer that from the data."
 
@@ -94,7 +99,9 @@ if question:
     with st.chat_message("assistant"):
         status = st.status("Searching your data...", expanded=False)
         try:
-            response = st.write_stream(agent_module.answer(question, now=datetime.now(), conn=conn))
+            with logfire.span("user_query", question=question):
+                now = datetime.now()
+                response = st.write_stream(agent_module.answer(question, now=now, conn=conn))
             status.update(state="complete", expanded=False)
         except Exception:
             logging.exception("Agent error in UI for question: %r", question)

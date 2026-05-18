@@ -12,12 +12,14 @@ from collections.abc import Generator
 from datetime import datetime
 from typing import Any
 
+import logfire
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from opentelemetry import context as otel_context
 
 import db
 from prompts import build_system_prompt
@@ -68,11 +70,14 @@ def _build_tools(conn: sqlite3.Connection) -> list:
         """Run a single read-only SQL SELECT against the events table and
         return the rows as a JSON array. Use this for any question about the
         baby's activity data. Only SELECT is allowed."""
-        try:
-            rows = db.run_select(conn, sql)
-        except (ValueError, sqlite3.Error) as exc:
-            return f"ERROR: {exc}"
-        return json.dumps(rows, default=str)
+        with logfire.span("tool: query_database", sql=sql):
+            try:
+                rows = db.run_select(conn, sql)
+            except (ValueError, sqlite3.Error) as exc:
+                logfire.warn("query rejected", error=str(exc))
+                return f"ERROR: {exc}"
+            logfire.debug("query returned {row_count} rows", row_count=len(rows))
+            return json.dumps(rows, default=str)
 
     return [query_database]
 
@@ -119,8 +124,10 @@ def answer(
     """
     q: queue.Queue[str | object] = queue.Queue()
     handler = _FinalAnswerHandler(q)
+    ctx = otel_context.get_current()  # capture span context for the thread
 
     def _run() -> None:
+        token = otel_context.attach(ctx)
         try:
             executor = build_agent(now, conn=conn)
             result = executor.invoke(
@@ -130,10 +137,14 @@ def answer(
             output = result.get("output", "")
             if not output or _AGENT_STOPPED in output.lower():
                 q.put(_FALLBACK)
+            else:
+                logfire.info("agent answered", question=question, answer=output)
         except Exception:
             _log.exception("Agent error for question: %r", question)
+            logfire.exception("agent error", question=question)
             q.put(_FALLBACK)
         finally:
+            otel_context.detach(token)
             q.put(_SENTINEL)
 
     t = threading.Thread(target=_run, daemon=True)

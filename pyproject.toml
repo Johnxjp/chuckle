@@ -11,11 +11,15 @@ dependencies = [
     "langchain-openai>=0.2,<0.3",
     "pydantic>=2.7,<3",
     "python-dotenv>=1.0,<2",
+    "beautifulsoup4>=4.14.3",
+    "logfire[langchain]>=4.33.0",
+    "opentelemetry-instrumentation-sqlite3>=0.62b1",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8,<9",
+    "pytest-httpx>=0.35.0",
     "ruff>=0.15.13",
 ]
 
@@ -28,3 +32,6 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM"]
+
+[tool.logfire]
+ignore_no_config = true
