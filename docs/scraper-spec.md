@@ -175,7 +175,7 @@ Thresholds must be validated against fixture HTML before merge (see Testing).
 
 ## Politeness
 
-- **User-Agent**: `chuckle-scraper/0.1 (+contact: lingijohn23@gmail.com)`
+- **User-Agent**: `chuckle-scraper/0.1`
 - **Delay between requests**: 1–2 seconds, uniform random jitter
 - **Sequential** — no concurrent requests
 - `robots.txt` honoured (see Robots.txt section)

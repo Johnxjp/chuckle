@@ -1,5 +1,6 @@
 huckleberry_data.csv
 chuckle.db
+nhs_scraper.db
 .env
 __pycache__/
 *.pyc
