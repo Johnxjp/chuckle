@@ -97,6 +97,31 @@ class TestAnswerGenerator:
         assert hasattr(gen, "__next__")
         list(gen)
 
+    def test_cross_thread_connection_does_not_raise(self):
+        """Regression: connection created in one thread must be usable from another.
+
+        Before the fix, db.get_schema_context(conn) raised sqlite3.ProgrammingError
+        when called from the agent daemon thread with a connection from the main thread
+        (e.g. via @st.cache_resource).
+        """
+        import sqlite3
+        import threading
+
+        conn = db.init_db(":memory:")
+        errors: list[Exception] = []
+
+        def use_in_other_thread() -> None:
+            try:
+                db.get_schema_context(conn)
+            except sqlite3.ProgrammingError as exc:
+                errors.append(exc)
+
+        t = threading.Thread(target=use_in_other_thread)
+        t.start()
+        t.join()
+
+        assert not errors, f"Cross-thread SQLite access raised: {errors[0]}"
+
     def test_yields_fallback_on_build_exception(self, monkeypatch):
         monkeypatch.setattr(agent_module, "build_agent", lambda *a, **kw: (_ for _ in []))
 

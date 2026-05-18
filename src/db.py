@@ -96,7 +96,10 @@ EVENT_COLUMNS = (
 
 
 def init_db(path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # check_same_thread=False: the connection is created in the Streamlit main
+    # thread but used from the agent daemon thread. SQLite is safe here because
+    # writes (CSV ingest) and reads (agent queries) never overlap in practice.
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA_SQL)
     conn.commit()
