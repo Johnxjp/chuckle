@@ -7,6 +7,7 @@ uploader, ingestion, db, and chat-input enablement.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
@@ -52,3 +53,19 @@ def test_csv_with_no_feed_rows_warns_and_keeps_chat_disabled():
     warnings = [w.value for w in at.sidebar.get("warning")]
     assert warnings == ["No rows found in the CSV."]
     assert at.chat_input[0].disabled is True
+
+
+def test_agent_error_swallowed_and_sorry_message_stored():
+    at = _new_app()
+    at.sidebar.get("file_uploader")[0].upload(
+        "feeds_only.csv", FIXTURE.read_bytes(), "text/csv"
+    ).run()
+
+    with patch("agent.answer", side_effect=RuntimeError("API down")):
+        at.chat_input[0].set_value("When was the last feed?").run()
+
+    msgs = at.session_state.messages
+    assert len(msgs) == 2
+    assert msgs[0]["role"] == "user"
+    assert msgs[1]["role"] == "assistant"
+    assert "Sorry" in msgs[1]["content"]

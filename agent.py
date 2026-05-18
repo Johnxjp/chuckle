@@ -1,19 +1,20 @@
-"""LangChain agent setup and query function.
-
-TB-1 wires the smallest possible end-to-end agent: one tool (`query_database`)
-that runs a read-only SELECT against the events table, and a hardcoded system
-prompt with the live DDL. Streaming, temporal reasoning, and the full prompt
-arrive in TB-3 / TB-4.
-"""
+"""LangChain agent setup and streaming query function."""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import queue
 import sqlite3
+import threading
+from collections.abc import Generator
 from datetime import datetime
+from typing import Any
 
 from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
@@ -23,14 +24,42 @@ from prompts import build_system_prompt
 
 DEFAULT_MODEL = "openai/gpt-4o-mini"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+_AGENT_STOPPED = "agent stopped due to iteration limit"
+_FALLBACK_MSG = "Sorry, I couldn't answer that from the data."
+_SENTINEL = object()
+_FALLBACK = object()
+
+_log = logging.getLogger(__name__)
 
 
-def _live_ddl(conn: sqlite3.Connection) -> str:
-    cursor = conn.execute(
-        "SELECT sql FROM sqlite_master "
-        "WHERE sql IS NOT NULL AND name IN ('events', 'idx_events_type', 'idx_events_start')"
-    )
-    return "\n\n".join(row[0] for row in cursor.fetchall())
+class _FinalAnswerHandler(BaseCallbackHandler):
+    """Queues final-answer tokens; silently discards tool-call JSON fragments.
+
+    Strategy: buffer every on_llm_new_token event. On on_llm_end, flush the
+    buffer to the queue only if the response was plain text (no tool_calls).
+    This avoids leaking JSON tool-call fragments to the UI.
+    """
+
+    def __init__(self, q: queue.Queue[str | object]) -> None:
+        self._q = q
+        self._buffer: list[str] = []
+
+    def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
+        self._buffer.append(token)
+
+    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        try:
+            gen = response.generations[0][0]
+            has_tool_calls = bool(getattr(getattr(gen, "message", None), "tool_calls", None))
+        except (IndexError, AttributeError):
+            has_tool_calls = False
+        if not has_tool_calls:
+            for tok in self._buffer:
+                self._q.put(tok)
+        self._buffer.clear()
+
+    def on_llm_error(self, error: Exception, **kwargs: Any) -> None:
+        self._buffer.clear()
 
 
 def _build_tools(conn: sqlite3.Connection) -> list:
@@ -49,7 +78,6 @@ def _build_tools(conn: sqlite3.Connection) -> list:
 
 
 def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentExecutor:
-    del now  # unused in TB-1; lands in TB-3 via build_temporal_context.
     conn = conn or db.init_db()
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -62,10 +90,12 @@ def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentE
         api_key=api_key,
         base_url=OPENROUTER_BASE_URL,
         temperature=0,
+        streaming=True,
     )
 
     tools = _build_tools(conn)
-    system_prompt = build_system_prompt(_live_ddl(conn))
+    schema_context = db.get_schema_context(conn)
+    system_prompt = build_system_prompt(now, schema_context)
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
@@ -78,7 +108,44 @@ def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentE
     return AgentExecutor(agent=agent, tools=tools, max_iterations=3, verbose=False)
 
 
-def answer(question: str, now: datetime, conn: sqlite3.Connection | None = None) -> str:
-    executor = build_agent(now, conn=conn)
-    result = executor.invoke({"input": question})
-    return result.get("output", "")
+def answer(
+    question: str, now: datetime, conn: sqlite3.Connection | None = None
+) -> Generator[str, None, None]:
+    """Stream the agent's final answer token by token.
+
+    Runs the agent in a daemon thread. Tool-call JSON fragments are filtered
+    by _FinalAnswerHandler; only final-answer tokens reach the caller. Yields
+    _FALLBACK_MSG as a single chunk if the agent errors or produces no output.
+    """
+    q: queue.Queue[str | object] = queue.Queue()
+    handler = _FinalAnswerHandler(q)
+
+    def _run() -> None:
+        try:
+            executor = build_agent(now, conn=conn)
+            result = executor.invoke(
+                {"input": question},
+                config={"callbacks": [handler]},
+            )
+            output = result.get("output", "")
+            if not output or _AGENT_STOPPED in output.lower():
+                q.put(_FALLBACK)
+        except Exception:
+            _log.exception("Agent error for question: %r", question)
+            q.put(_FALLBACK)
+        finally:
+            q.put(_SENTINEL)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    yielded_any = False
+    for item in iter(q.get, _SENTINEL):
+        if item is _FALLBACK:
+            if not yielded_any:
+                yield _FALLBACK_MSG
+        else:
+            yield str(item)
+            yielded_any = True
+
+    t.join()

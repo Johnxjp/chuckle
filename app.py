@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime
 
@@ -13,6 +14,8 @@ import db
 import ingest
 
 load_dotenv()
+
+_SORRY = "Sorry, I couldn't answer that from the data."
 
 st.set_page_config(page_title="Chuckle", page_icon=None)
 st.title("Chuckle")
@@ -89,6 +92,13 @@ if question:
     with st.chat_message("user"):
         st.write(question)
     with st.chat_message("assistant"):
-        response = agent_module.answer(question, now=datetime.now(), conn=conn)
-        st.write(response)
+        status = st.status("Searching your data...", expanded=False)
+        try:
+            response = st.write_stream(agent_module.answer(question, now=datetime.now(), conn=conn))
+            status.update(state="complete", expanded=False)
+        except Exception:
+            logging.exception("Agent error in UI for question: %r", question)
+            response = _SORRY
+            st.write(response)
+            status.update(state="error", expanded=False)
     st.session_state.messages.append({"role": "assistant", "content": response})

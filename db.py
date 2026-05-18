@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from collections.abc import Iterable
 from typing import Any
+
+_SQL_COMMENT_RE = re.compile(r"(--[^\n]*|/\*.*?\*/)", re.DOTALL)
+_MULTI_STMT_RE = re.compile(r";\s*\S")
 
 DEFAULT_DB_PATH = "chuckle.db"
 
@@ -112,8 +117,49 @@ def replace_events(conn: sqlite3.Connection, events: Iterable[dict[str, Any]]) -
 
 
 def run_select(conn: sqlite3.Connection, sql: str) -> list[dict[str, Any]]:
-    stripped = sql.strip().lower()
-    if not stripped.startswith("select"):
+    without_comments = _SQL_COMMENT_RE.sub(" ", sql)
+    if not without_comments.strip().lower().startswith("select"):
+        raise ValueError("only SELECT statements are allowed")
+    if _MULTI_STMT_RE.search(without_comments):
         raise ValueError("only SELECT statements are allowed")
     cursor = conn.execute(sql)
     return [dict(row) for row in cursor.fetchall()]
+
+
+def get_schema_context(conn: sqlite3.Connection) -> str:
+    from prompts import COLUMN_DESCRIPTIONS  # local import avoids circular dependency
+
+    cursor = conn.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE sql IS NOT NULL AND name IN ('events', 'idx_events_type', 'idx_events_start')"
+    )
+    ddl = "\n\n".join(row[0] for row in cursor.fetchall())
+
+    col_desc_lines = "\n".join(f"  {col}: {desc}" for col, desc in COLUMN_DESCRIPTIONS.items())
+
+    event_types = [
+        "Feed",
+        "Sleep",
+        "Diaper",
+        "Bath",
+        "Tummy time",
+        "Story time",
+        "Pump",
+        "Meds",
+        "Growth",
+        "Temp",
+    ]
+    samples_parts = []
+    for event_type in event_types:
+        rows = conn.execute("SELECT * FROM events WHERE type = ? LIMIT 3", (event_type,)).fetchall()
+        if rows:
+            rows_json = "\n".join(json.dumps(dict(row), default=str) for row in rows)
+            samples_parts.append(f"{event_type}:\n{rows_json}")
+
+    samples_block = "\n\n".join(samples_parts) if samples_parts else "(no data yet)"
+
+    return (
+        f"Database schema (live DDL):\n{ddl}\n\n"
+        f"Column descriptions:\n{col_desc_lines}\n\n"
+        f"Sample rows (up to 3 per event type):\n{samples_block}"
+    )
