@@ -25,7 +25,19 @@ The primary data source. CSV columns:
 | `Notes` | Free text e.g. `Poo:small`, `Pee:medium`, stool colour |
 
 ### `evaluation_data.json`
-Intended to hold ground-truth query/answer pairs for evaluating the assistant. Currently empty.
+Ground-truth query/answer pairs for evaluating the assistant. Currently an empty array `[]`.
+
+Planned record shape (one object per evaluation case):
+
+```json
+{
+  "question": "How long did she sleep last night?",
+  "expected_answer": "8 hours 12 minutes",
+  "expected_time_range": "2026-01-04 21:00:00 – 2026-01-05 05:00:00"
+}
+```
+
+The eval runner (spec §9) is out of scope for now; this file reserves the format.
 
 ## Planned Architecture
 
