@@ -245,7 +245,7 @@ Thresholds must be validated against fixture HTML before merge (see Testing).
 
 **Entry point:**
 ```bash
-uv run -m src.scraper.main [--force] [--retry-failed]
+uv run python scripts/scrape_nhs.py [--force] [--retry-failed]
 ```
 
 **Modules:**
@@ -255,7 +255,7 @@ uv run -m src.scraper.main [--force] [--retry-failed]
 - `fetcher.py` — HTTP fetch with retry/backoff, Content-Type/size checks, redirect handling
 - `classifier.py` — article vs index classification (operates on `<main>`)
 - `crawler.py` — BFS loop, link extraction
-- `main.py` — CLI entry, wires everything together, prints summary
+- `scripts/scrape_nhs.py` — CLI entry, wires everything together, prints summary
 
 ---
 

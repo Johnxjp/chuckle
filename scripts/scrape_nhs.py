@@ -1,4 +1,9 @@
-"""CLI entry point for the NHS baby scraper."""
+"""CLI entry point for the NHS baby scraper.
+
+Run from the project root:
+
+    uv run python scripts/scrape_nhs.py [--force | --retry-failed] [--db PATH]
+"""
 
 from __future__ import annotations
 
@@ -8,9 +13,14 @@ import os
 import sys
 import time
 from datetime import timedelta
+from pathlib import Path
 
-from src.scraper import crawler, db, fetcher, robots
-from src.scraper.constants import (
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.scraper import crawler, db, fetcher, robots  # noqa: E402
+from src.scraper.constants import (  # noqa: E402
     DEFAULT_DB_PATH,
     EXCEPTION_URLS,
     MAX_PAGES,
@@ -37,7 +47,7 @@ def _configure_logging() -> None:
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="src.scraper.main", description="NHS baby scraper")
+    parser = argparse.ArgumentParser(prog="scrape_nhs", description="NHS baby scraper")
     parser.add_argument(
         "--db",
         default=DEFAULT_DB_PATH,
