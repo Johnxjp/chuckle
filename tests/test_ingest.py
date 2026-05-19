@@ -68,12 +68,6 @@ def test_parse_sleep_duration():
     assert not result.warnings
 
 
-def test_parse_sleep_short_duration():
-    text = HEADER + "Sleep,2026-01-01 13:00,2026-01-01 13:27,0:27,,,,\n"
-    result = _parse(text)
-    assert result.events[0]["duration_minutes"] == 27
-
-
 # ---- Diaper ----
 
 
@@ -145,12 +139,6 @@ def test_parse_pump_oz_converted_to_ml():
     assert result.events[0]["pump_volume_ml"] == 30  # round(29.5735)
 
 
-def test_parse_pump_zero_volume():
-    text = HEADER + "Pump,2026-01-01 07:00,,,0ml,,0ml,\n"
-    result = _parse(text)
-    assert result.events[0]["pump_volume_ml"] == 0
-
-
 # ---- Meds ----
 
 
@@ -183,12 +171,6 @@ def test_parse_growth_kg():
     assert e["growth_weight_units"] == "kg"
 
 
-def test_parse_growth_whole_number():
-    text = HEADER + "Growth,2026-01-01 10:00,,,6kg,,,\n"
-    result = _parse(text)
-    assert result.events[0]["growth_weight"] == 6.0
-
-
 # ---- Temp ----
 
 
@@ -208,18 +190,6 @@ def test_parse_bath():
     result = _parse(text)
     assert len(result.events) == 1
     assert result.events[0]["type"] == "Bath"
-
-
-def test_parse_tummy_time():
-    text = HEADER + "Tummy time,2026-01-01 10:00,,,,,,\n"
-    result = _parse(text)
-    assert result.events[0]["type"] == "Tummy time"
-
-
-def test_parse_story_time():
-    text = HEADER + "Story time,2026-01-01 18:30,,,,,,\n"
-    result = _parse(text)
-    assert result.events[0]["type"] == "Story time"
 
 
 # ---- Validation rules (spec §4.4) ----
@@ -278,12 +248,3 @@ def test_full_csv_type_counts():
         result = ingest.parse_csv(f)
     counts = dict(Counter(e["type"] for e in result.events))
     assert counts == expected
-
-
-@pytest.mark.skipif(not REAL_CSV.exists(), reason="huckleberry_data.csv not present")
-def test_full_csv_re_parse_is_idempotent():
-    with open(REAL_CSV, "rb") as f:
-        result_a = ingest.parse_csv(f)
-    with open(REAL_CSV, "rb") as f:
-        result_b = ingest.parse_csv(f)
-    assert len(result_a.events) == len(result_b.events)

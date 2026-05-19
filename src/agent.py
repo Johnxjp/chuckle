@@ -15,8 +15,9 @@ from typing import Any
 import logfire
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.outputs import LLMResult
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from opentelemetry import context as otel_context
@@ -101,9 +102,11 @@ def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentE
     tools = _build_tools(conn)
     schema_context = db.get_schema_context(conn)
     system_prompt = build_system_prompt(now, schema_context)
+    escaped_system = system_prompt.replace("{", "{{").replace("}", "}}")
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", system_prompt),
+            ("system", escaped_system),
+            MessagesPlaceholder("chat_history", optional=True),
             ("human", "{input}"),
             ("placeholder", "{agent_scratchpad}"),
         ]
@@ -113,8 +116,21 @@ def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentE
     return AgentExecutor(agent=agent, tools=tools, max_iterations=3, verbose=False)
 
 
+def _to_lc_messages(history: list[dict]) -> list:
+    messages = []
+    for m in history:
+        if m["role"] == "user":
+            messages.append(HumanMessage(content=m["content"]))
+        elif m["role"] == "assistant":
+            messages.append(AIMessage(content=m["content"]))
+    return messages
+
+
 def answer(
-    question: str, now: datetime, conn: sqlite3.Connection | None = None
+    question: str,
+    now: datetime,
+    conn: sqlite3.Connection | None = None,
+    history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
     """Stream the agent's final answer token by token.
 
@@ -131,7 +147,7 @@ def answer(
         try:
             executor = build_agent(now, conn=conn)
             result = executor.invoke(
-                {"input": question},
+                {"input": question, "chat_history": _to_lc_messages(history or [])},
                 config={"callbacks": [handler]},
             )
             output = result.get("output", "")

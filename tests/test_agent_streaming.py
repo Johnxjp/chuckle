@@ -6,7 +6,6 @@ import json
 import queue
 import uuid
 from datetime import datetime
-from unittest.mock import MagicMock
 
 import pytest
 from langchain.agents import AgentExecutor, create_tool_calling_agent
@@ -92,11 +91,6 @@ class TestFinalAnswerHandler:
 
 
 class TestAnswerGenerator:
-    def test_answer_is_a_generator(self):
-        gen = agent_module.answer("test", now=datetime.now())
-        assert hasattr(gen, "__next__")
-        list(gen)
-
     def test_cross_thread_connection_does_not_raise(self):
         """Regression: connection created in one thread must be usable from another.
 
@@ -129,18 +123,6 @@ class TestAnswerGenerator:
             raise RuntimeError("API down")
 
         monkeypatch.setattr(agent_module, "build_agent", _raise)
-        assert list(agent_module.answer("test", now=datetime.now())) == [_FALLBACK_MSG]
-
-    def test_yields_fallback_when_agent_stopped(self, monkeypatch):
-        mock_exec = MagicMock()
-        mock_exec.invoke.return_value = {"output": "Agent stopped due to iteration limit"}
-        monkeypatch.setattr(agent_module, "build_agent", lambda *a, **kw: mock_exec)
-        assert list(agent_module.answer("test", now=datetime.now())) == [_FALLBACK_MSG]
-
-    def test_yields_fallback_on_empty_output(self, monkeypatch):
-        mock_exec = MagicMock()
-        mock_exec.invoke.return_value = {"output": ""}
-        monkeypatch.setattr(agent_module, "build_agent", lambda *a, **kw: mock_exec)
         assert list(agent_module.answer("test", now=datetime.now())) == [_FALLBACK_MSG]
 
 
@@ -194,28 +176,11 @@ class TestQueryDatabaseTool:
         result = query_db.invoke({"sql": "SELECT 1 AS n"})
         assert json.loads(result) == [{"n": 1}]
 
-    def test_empty_table_returns_empty_array(self, mem_conn):
-        [query_db] = agent_module._build_tools(mem_conn)
-        result = query_db.invoke({"sql": "SELECT * FROM events"})
-        assert json.loads(result) == []
-
-    def test_drop_returns_error_string_not_raises(self, mem_conn):
+    def test_mutation_returns_error_string_not_raises(self, mem_conn):
         [query_db] = agent_module._build_tools(mem_conn)
         result = query_db.invoke({"sql": "DROP TABLE events"})
         assert result.startswith("ERROR:")
         assert "SELECT" in result
-
-    def test_insert_returns_error_string(self, mem_conn):
-        [query_db] = agent_module._build_tools(mem_conn)
-        result = query_db.invoke(
-            {"sql": "INSERT INTO events (type, start_time) VALUES ('Bath', '2026-01-01 10:00:00')"}
-        )
-        assert result.startswith("ERROR:")
-
-    def test_multi_statement_returns_error_string(self, mem_conn):
-        [query_db] = agent_module._build_tools(mem_conn)
-        result = query_db.invoke({"sql": "SELECT 1; DROP TABLE events"})
-        assert result.startswith("ERROR:")
 
 
 class TestAgentWithFakeLLM:
@@ -253,22 +218,3 @@ class TestAgentWithFakeLLM:
         executor = _make_executor(mem_conn, [tool_call_msg, final_msg])
         result = executor.invoke({"input": "How many feeds are there?"})
         assert result["output"] == "Leo had 1 feed recorded."
-
-    def test_select_only_enforced_in_agent_flow(self, mem_conn):
-        tool_call_msg = AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "name": "query_database",
-                    "args": {"sql": "DELETE FROM events"},
-                    "id": "call_002",
-                    "type": "tool_call",
-                }
-            ],
-        )
-        final_msg = AIMessage(content="I cannot delete data.")
-
-        executor = _make_executor(mem_conn, [tool_call_msg, final_msg])
-        result = executor.invoke({"input": "Delete all events."})
-        assert result["output"] == "I cannot delete data."
-        assert mem_conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0

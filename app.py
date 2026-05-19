@@ -101,15 +101,18 @@ if question:
     with st.chat_message("user"):
         st.write(question)
     with st.chat_message("assistant"):
-        status = st.status("Searching your data...", expanded=False)
         try:
-            with logfire.span("user_query", question=question):
+            with (
+                st.spinner("Searching your data..."),
+                logfire.span("user_query", question=question),
+            ):
                 now = datetime.now()
-                response = st.write_stream(agent_module.answer(question, now=now, conn=conn))
-            status.update(state="complete", expanded=False)
+                history = st.session_state.messages[:-1][-10:]
+                response = st.write_stream(
+                    agent_module.answer(question, now=now, conn=conn, history=history)
+                )
         except Exception:
             logging.exception("Agent error in UI for question: %r", question)
             response = _SORRY
             st.write(response)
-            status.update(state="error", expanded=False)
     st.session_state.messages.append({"role": "assistant", "content": response})
