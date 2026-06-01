@@ -13,6 +13,13 @@ _MULTI_STMT_RE = re.compile(r";\s*\S")
 
 DEFAULT_DB_PATH = "chuckle.db"
 
+# Bump whenever SCHEMA_SQL changes. init_db rebuilds the events table when an
+# on-disk database carries an older version, because CREATE TABLE IF NOT EXISTS
+# never alters an existing table's columns or CHECK constraints. The events
+# table holds no source-of-truth data (it is fully regenerated from the
+# uploaded CSV via replace_events), so dropping it on a schema change is safe.
+SCHEMA_VERSION = 2
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS events (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -101,6 +108,9 @@ def init_db(path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
     # writes (CSV ingest) and reads (agent queries) never overlap in practice.
     conn = sqlite3.connect(path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+        conn.executescript("DROP TABLE IF EXISTS events")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     conn.executescript(SCHEMA_SQL)
     conn.commit()
     return conn
