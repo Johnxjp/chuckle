@@ -55,6 +55,35 @@ def test_parse_feed_bottle_with_type():
     assert e.get("feed_right_minutes") is None
 
 
+# ---- Solids ----
+
+
+def test_parse_solids_food_and_reaction():
+    text = HEADER + "Solids,2026-05-31 16:00,,,Pumpkin,,LOVED,\n"
+    result = _parse(text)
+    assert len(result.events) == 1
+    e = result.events[0]
+    assert e["type"] == "Solids"
+    assert e["feed_solids_food"] == "Pumpkin"
+    assert e["feed_solids_reaction"] == "LOVED"
+    assert e.get("duration_minutes") is None
+    assert not result.warnings
+
+
+def test_parse_solids_no_reaction():
+    text = HEADER + '"Solids","2026-05-22 11:50",,,"Carrot, sweet potato",,,\n'
+    result = _parse(text)
+    e = result.events[0]
+    assert e["feed_solids_food"] == "Carrot, sweet potato"
+    assert e["feed_solids_reaction"] is None
+
+
+def test_parse_solids_invalid_reaction_nulled():
+    text = HEADER + "Solids,2026-05-24 12:20,,,Broccoli,,YUCK,\n"
+    result = _parse(text)
+    assert result.events[0]["feed_solids_reaction"] is None
+
+
 # ---- Sleep ----
 
 

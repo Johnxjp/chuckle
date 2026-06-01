@@ -28,6 +28,7 @@ _BOTTLE_TYPES = frozenset(
 _KNOWN_TYPES = frozenset(
     {
         "Feed",
+        "Solids",
         "Sleep",
         "Diaper",
         "Bath",
@@ -39,6 +40,7 @@ _KNOWN_TYPES = frozenset(
         "Temp",
     }
 )
+_SOLIDS_REACTIONS = frozenset({"LOVED", "MEH", "HATED", "ALLERGIC"})
 _DIAPER_COLOURS = frozenset({"yellow", "brown", "black", "green", "red", "gray"})
 _DIAPER_CONSISTENCIES = frozenset(
     {"solid", "loose", "runny", "mucousy", "hard", "pebbles", "diarrhea"}
@@ -97,6 +99,7 @@ def _parse_row(row: dict[str, str], row_num: int, result: ParseResult) -> None:
 
     _dispatch = {
         "Feed": _parse_feed,
+        "Solids": _parse_solids,
         "Sleep": _parse_sleep,
         "Diaper": _parse_diaper,
         "Pump": _parse_pump,
@@ -127,6 +130,16 @@ def _parse_feed(row: dict[str, str], base: EventRecord) -> EventRecord:
         "feed_mode": feed_mode,
         "feed_left_minutes": left_minutes,
         "feed_right_minutes": right_minutes,
+    }
+
+
+def _parse_solids(row: dict[str, str], base: EventRecord) -> EventRecord:
+    food = (row.get("Start Condition") or "").strip() or None
+    reaction_raw = (row.get("End Condition") or "").strip().upper()
+    return {
+        **base,
+        "feed_solids_food": food,
+        "feed_solids_reaction": reaction_raw if reaction_raw in _SOLIDS_REACTIONS else None,
     }
 
 

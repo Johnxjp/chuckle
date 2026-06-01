@@ -17,7 +17,7 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS events (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     type             TEXT NOT NULL CHECK(type IN (
-                         'Feed', 'Sleep', 'Diaper', 'Bath',
+                         'Feed', 'Solids', 'Sleep', 'Diaper', 'Bath',
                          'Tummy time', 'Story time', 'Pump',
                          'Meds', 'Growth', 'Temp'
                      )),
@@ -129,6 +129,14 @@ def run_select(conn: sqlite3.Connection, sql: str) -> list[dict[str, Any]]:
     return [dict(row) for row in cursor.fetchall()]
 
 
+def get_event_summary(conn: sqlite3.Connection) -> tuple[int, dict[str, int]]:
+    total = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    if total == 0:
+        return 0, {}
+    rows = conn.execute("SELECT type, COUNT(*) FROM events GROUP BY type").fetchall()
+    return total, {row[0]: row[1] for row in rows}
+
+
 def get_schema_context(conn: sqlite3.Connection) -> str:
     from prompts import COLUMN_DESCRIPTIONS  # local import avoids circular dependency
 
@@ -142,6 +150,7 @@ def get_schema_context(conn: sqlite3.Connection) -> str:
 
     event_types = [
         "Feed",
+        "Solids",
         "Sleep",
         "Diaper",
         "Bath",

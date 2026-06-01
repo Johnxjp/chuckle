@@ -26,13 +26,14 @@ _MIDNIGHT_CROSSING = {"night", "overnight"}
 
 COLUMN_DESCRIPTIONS: dict[str, str] = {
     "type": (
-        "Event type: Feed, Sleep, Diaper, Bath, Tummy time, Story time, Pump, Meds, Growth, Temp"
+        "Event type: Feed, Solids, Sleep, Diaper, Bath, Tummy time, Story time, "
+        "Pump, Meds, Growth, Temp"
     ),
     "start_time": "ISO 8601 datetime when the event started",
     "end_time": "ISO 8601 datetime when the event ended (NULL for instantaneous events)",
     "duration_minutes": (
         "Total duration in minutes"
-        " (NULL for Diaper, Meds, Growth, Temp, Bath, Tummy time, Story time)"
+        " (NULL for Solids, Diaper, Meds, Growth, Temp, Bath, Tummy time, Story time)"
     ),
     "notes": "Free-text notes attached to the event",
     "feed_mode": "Feed delivery mode: breast, bottle, or solids",
@@ -44,8 +45,10 @@ COLUMN_DESCRIPTIONS: dict[str, str] = {
         "Type of bottle content:"
         " Breast Milk, Formula, Tube Feeding, Cow Milk, Goat Milk, Soy Milk, Other"
     ),
-    "feed_solids_food": "Food given during a solids feed",
-    "feed_solids_reaction": "Baby's reaction to solids: LOVED, MEH, HATED, ALLERGIC",
+    "feed_solids_food": "Food given during a Solids event (Solids type only)",
+    "feed_solids_reaction": (
+        "Baby's reaction to a Solids event: LOVED, MEH, HATED, ALLERGIC (Solids type only)"
+    ),
     "diaper_kind": "Nappy contents: pee, poo, both, or dry",
     "diaper_colour": "Stool colour: yellow, brown, black, green, red, gray",
     "diaper_consistency": (
