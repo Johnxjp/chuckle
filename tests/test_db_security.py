@@ -45,6 +45,22 @@ def test_run_select_allows_select_variants(conn, sql: str) -> None:
     assert db.run_select(conn, sql) == [{"n": 1}]
 
 
+def test_get_event_summary_empty(conn) -> None:
+    total, counts = db.get_event_summary(conn)
+    assert total == 0
+    assert counts == {}
+
+
+def test_get_event_summary_with_data(conn) -> None:
+    conn.execute("INSERT INTO events (type, start_time) VALUES ('Bath', '2026-01-01 10:00:00')")
+    conn.execute("INSERT INTO events (type, start_time) VALUES ('Bath', '2026-01-01 11:00:00')")
+    conn.execute("INSERT INTO events (type, start_time) VALUES ('Sleep', '2026-01-01 22:00:00')")
+    conn.commit()
+    total, counts = db.get_event_summary(conn)
+    assert total == 3
+    assert counts == {"Bath": 2, "Sleep": 1}
+
+
 def test_get_schema_context_renders_ddl_columns_and_placeholder(conn) -> None:
     context = db.get_schema_context(conn)
     assert "CREATE TABLE" in context
