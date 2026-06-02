@@ -183,6 +183,49 @@ class TestQueryDatabaseTool:
         assert "SELECT" in result
 
 
+class TestBuildAgentModelParams:
+    """build_agent forwards model parameters to the LLM."""
+
+    def _capture_chatopenai(self, monkeypatch, mem_conn):
+        captured: dict = {}
+
+        def fake_factory(**kwargs):
+            captured.update(kwargs)
+            return _CannedChatModel(responses=[])
+
+        monkeypatch.setattr(agent_module, "ChatOpenAI", fake_factory)
+        return captured
+
+    def test_explicit_params_forwarded_to_llm(self, monkeypatch, mem_conn):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+        captured = self._capture_chatopenai(monkeypatch, mem_conn)
+
+        agent_module.build_agent(
+            datetime(2026, 5, 7, 19, 0, 0),
+            model="anthropic/claude-x",
+            temperature=0.7,
+            max_tokens=512,
+            conn=mem_conn,
+        )
+
+        assert captured["model"] == "anthropic/claude-x"
+        assert captured["temperature"] == 0.7
+        assert captured["max_tokens"] == 512
+        assert captured["api_key"] == "test-key"
+        assert captured["streaming"] is True
+
+    def test_defaults_preserve_app_behaviour(self, monkeypatch, mem_conn):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+        monkeypatch.setenv("CHUCKLE_MODEL", "env/model")
+        captured = self._capture_chatopenai(monkeypatch, mem_conn)
+
+        agent_module.build_agent(datetime(2026, 5, 7, 19, 0, 0), conn=mem_conn)
+
+        assert captured["model"] == "env/model"
+        assert captured["temperature"] == 0.0
+        assert captured["max_tokens"] is None
+
+
 class TestAgentWithFakeLLM:
     """T-5.5: stub LLM emitting canned tool calls; assert final string produced."""
 

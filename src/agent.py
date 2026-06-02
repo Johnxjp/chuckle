@@ -83,19 +83,26 @@ def _build_tools(conn: sqlite3.Connection) -> list:
     return [query_database]
 
 
-def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentExecutor:
+def build_agent(
+    now: datetime,
+    model: str | None = None,
+    temperature: float = 0.0,
+    max_tokens: int | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> AgentExecutor:
     conn = conn or db.init_db()
 
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not set")
-    model_name = os.environ.get("CHUCKLE_MODEL", DEFAULT_MODEL)
+    model = model or os.environ.get("CHUCKLE_MODEL", DEFAULT_MODEL)
 
     llm = ChatOpenAI(
-        model=model_name,
+        model=model,
         api_key=api_key,
         base_url=OPENROUTER_BASE_URL,
-        temperature=0,
+        temperature=temperature,
+        max_tokens=max_tokens,
         streaming=True,
     )
 
