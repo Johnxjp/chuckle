@@ -113,7 +113,7 @@ def build_agent(now: datetime, conn: sqlite3.Connection | None = None) -> AgentE
     )
 
     agent = create_tool_calling_agent(llm, tools, prompt)
-    return AgentExecutor(agent=agent, tools=tools, max_iterations=3, verbose=False)
+    return AgentExecutor(agent=agent, tools=tools, max_iterations=10, verbose=False)
 
 
 def _to_lc_messages(history: list[dict]) -> list:
