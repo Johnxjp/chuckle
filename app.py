@@ -50,6 +50,14 @@ for key, default in (
 
 conn = _connection()
 
+# Restore db_ready from persistent SQLite after a page refresh
+if not st.session_state.db_ready:
+    _row_count, _type_counts = db.get_event_summary(conn)
+    if _row_count > 0:
+        st.session_state.db_ready = True
+        st.session_state.last_row_count = _row_count
+        st.session_state.last_type_counts = _type_counts
+
 with st.sidebar:
     st.header("Data")
     uploaded = st.file_uploader("Huckleberry CSV", type=["csv"])
@@ -75,7 +83,7 @@ with st.sidebar:
 
     if st.session_state.last_error:
         st.error(f"Ingest failed: {st.session_state.last_error}")
-    elif st.session_state.last_upload_id is not None:
+    elif st.session_state.db_ready or st.session_state.last_upload_id is not None:
         count = st.session_state.last_row_count
         if count > 0:
             st.success(f"{count} rows ingested")
