@@ -89,6 +89,7 @@ def build_agent(
     temperature: float = 0.0,
     max_tokens: int | None = None,
     conn: sqlite3.Connection | None = None,
+    return_intermediate_steps: bool = False,
 ) -> AgentExecutor:
     conn = conn or db.init_db()
 
@@ -120,7 +121,13 @@ def build_agent(
     )
 
     agent = create_tool_calling_agent(llm, tools, prompt)
-    return AgentExecutor(agent=agent, tools=tools, max_iterations=10, verbose=False)
+    return AgentExecutor(
+        agent=agent,
+        tools=tools,
+        max_iterations=10,
+        verbose=False,
+        return_intermediate_steps=return_intermediate_steps,
+    )
 
 
 def _to_lc_messages(history: list[dict]) -> list:

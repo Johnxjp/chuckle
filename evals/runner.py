@@ -9,9 +9,9 @@ Run with ``src`` on ``PYTHONPATH`` (matching the pytest config), e.g.
 ``PYTHONPATH=src uv run python evals/runner.py``.
 """
 
+import argparse
 import hashlib
 import json
-import os
 import sqlite3
 import subprocess
 import uuid
@@ -29,6 +29,7 @@ from prompts import build_system_prompt
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATASET_PATH = Path(__file__).parent / "datasets" / "knowledge_base_v1.json"
+CASES_PATH = Path(__file__).parent / "cases" / "ground_cases.json"
 _NOW_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -39,7 +40,7 @@ def load_eval_env() -> None:
     relative to the project root. ``override=True`` ensures eval credentials win
     over a real ``.env`` so a prod key can't leak into an eval run.
     """
-    env_file = os.environ.get("CHUCKLE_ENV_FILE", ".env.eval")
+    env_file = ".env.eval"
     load_dotenv(PROJECT_ROOT / env_file, override=True)
 
 
@@ -68,6 +69,29 @@ def load_events(dataset_path: Path = DATASET_PATH) -> list[dict[str, Any]]:
     return load_dataset(dataset_path)["events"]
 
 
+def load_cases(cases_path: Path = CASES_PATH) -> list[dict[str, Any]]:
+    """Return the list of eval cases held in a cases JSON file."""
+    with cases_path.open() as f:
+        return json.load(f)
+
+
+def select_cases(cases: list[dict[str, Any]], names: list[str] | None) -> list[dict[str, Any]]:
+    """Filter ``cases`` to those whose ``id`` is in ``names`` (order preserved).
+
+    With no names, all cases are returned. Names that match no case raise a
+    ``ValueError`` so a typo'd ``--case`` fails loudly instead of silently
+    running nothing.
+    """
+    if not names:
+        return cases
+    wanted = set(names)
+    selected = [c for c in cases if c["id"] in wanted]
+    missing = wanted - {c["id"] for c in selected}
+    if missing:
+        raise ValueError(f"unknown case id(s): {', '.join(sorted(missing))}")
+    return selected
+
+
 def init_eval_db(
     events: list[dict[str, Any]] | None = None,
     dataset_path: Path = DATASET_PATH,
@@ -88,18 +112,27 @@ def build_eval_agent(
     model: str | None = None,
     temperature: float = 0.0,
     max_tokens: int | None = None,
+    return_intermediate_steps: bool = True,
 ) -> AgentExecutor:
     """Build an agent bound to a fresh in-memory eval DB instead of ``chuckle.db``.
 
     ``now`` is taken from the dataset's ``data.now`` (a fixed timestamp) so the
     system prompt's temporal context and few-shot examples are reproducible.
     Model parameters are passed through to ``build_agent`` so eval runs can
-    configure and record them.
+    configure and record them. ``return_intermediate_steps`` defaults to ``True``
+    so ``invoke`` returns the full tool trace (tool inputs and outputs) for scoring.
     """
     data = load_dataset(dataset_path)
     now = datetime.strptime(data["now"], _NOW_FORMAT)
     conn = init_eval_db(data["events"])
-    return build_agent(now, model=model, temperature=temperature, max_tokens=max_tokens, conn=conn)
+    return build_agent(
+        now,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        conn=conn,
+        return_intermediate_steps=return_intermediate_steps,
+    )
 
 
 def render_system_prompt(dataset_path: Path = DATASET_PATH) -> str:
@@ -137,13 +170,56 @@ def create_run_metadata(config: dict) -> EvalRunMetadata:
     )
 
 
-def main():
+def run_case(executor: AgentExecutor, case: dict[str, Any]) -> str:
+    """Run one case's ``user_message`` through the agent and return its answer."""
+    result = executor.invoke({"input": case["user_message"], "chat_history": []})
+    return result.get("output", "")
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run eval cases through the agent.")
+    parser.add_argument(
+        "--cases",
+        type=Path,
+        default=CASES_PATH,
+        help="Path to the test-cases JSON file (default: evals/cases/ground_cases.json)",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=DATASET_PATH,
+        help="Path to the events dataset used to seed the eval DB",
+    )
+    parser.add_argument(
+        "--case",
+        dest="case_ids",
+        action="append",
+        metavar="CASE_ID",
+        help="Only run the named case; repeatable (e.g. --case case_001 --case case_002)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="OpenRouter model slug (default: CHUCKLE_MODEL or the agent default)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     load_eval_env()
-    conn = init_eval_db()
-    total, by_type = db.get_event_summary(conn)
-    print(f"eval db seeded: {total} events")
-    for event_type, count in sorted(by_type.items()):
-        print(f"  {event_type}: {count}")
+
+    cases = select_cases(load_cases(args.cases), args.case_ids)
+    if not cases:
+        print("no cases to run")
+        return
+
+    executor = build_eval_agent(args.dataset, model=args.model)
+    print(f"running {len(cases)} case(s) against {args.dataset.name}\n")
+    for case in cases:
+        print(f"=== {case['id']} ===")
+        print(f"Q: {case['user_message']}")
+        print(f"A: {run_case(executor, case)}\n")
 
 
 if __name__ == "__main__":
