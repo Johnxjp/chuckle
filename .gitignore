@@ -1,7 +1,9 @@
-huckleberry_data.csv
+datasets/raw
 chuckle.db
 nhs_scraper.db
 .env
+.env.eval
+jobs/
 __pycache__/
 *.pyc
 .venv/

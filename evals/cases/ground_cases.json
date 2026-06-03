@@ -1,0 +1,409 @@
+{
+  "dataset": "knowledge_base_v1.json",
+  "cases": [
+    {
+      "id": "case_001",
+      "metadata": {},
+      "input": {
+        "user_message": "When did Sarah last feed?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": "She last fed at 6:48pm on May 7th, 2026.",
+        "scorers": [
+          {
+            "name": "required_tools",
+            "args": {
+              "expected": [
+                "query_database"
+              ]
+            }
+          },
+          {
+            "name": "tool_count",
+            "args": {
+              "expected": [
+                [
+                  "query_database",
+                  1
+                ]
+              ]
+            }
+          },
+          {
+            "name": "datetime_present",
+            "args": {
+              "expected": "18:48"
+            }
+          },
+          {
+            "name": "output_not_contains",
+            "args": {
+              "expected": "2026-05-07 18:48:00"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "case_002",
+      "metadata": {},
+      "input": {
+        "user_message": "How many times did Sarah feed May 11th?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_003",
+      "metadata": {},
+      "input": {
+        "user_message": "How long are feeds lasting on average this week (Today is Friday May 8th)?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_004",
+      "metadata": {},
+      "input": {
+        "user_message": "Is Sarah spending more time on the right or left breast?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_005",
+      "metadata": {},
+      "input": {
+        "user_message": "How often is Sarah cluster feeding and when does it usually happen?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_006",
+      "metadata": {},
+      "input": {
+        "user_message": "How many times did Sarah wake up last night? (may 1st)"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_007",
+      "metadata": {},
+      "input": {
+        "user_message": "What's the longest single stretch of sleep Sarah has had this week (from May 4th to May 7th)?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_008",
+      "metadata": {},
+      "input": {
+        "user_message": "How much total sleep is Sarah getting in a 24-hour period on average?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_009",
+      "metadata": {},
+      "input": {
+        "user_message": "How much total sleep is Sarah getting in a 24-hour period on average from April 22nd"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_010",
+      "metadata": {},
+      "input": {
+        "user_message": "Are overnight sleep stretches getting longer over the past month?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_011",
+      "metadata": {},
+      "input": {
+        "user_message": "When does Sarah usually go down for his first nap of the day? (only data from April 22nd onwards)"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_012",
+      "metadata": {},
+      "input": {
+        "user_message": "How long are daytime naps on average compared to last week?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_013",
+      "metadata": {},
+      "input": {
+        "user_message": "What time does Sarah typically wake up for the day?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_014",
+      "metadata": {},
+      "input": {
+        "user_message": "Has Sarah had a poo today?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_015",
+      "metadata": {},
+      "input": {
+        "user_message": "How many wet and dirty nappies did Sarah have yesterday?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_016",
+      "metadata": {},
+      "input": {
+        "user_message": "Has Sarah's poo frequency changed over the past few weeks?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_017",
+      "metadata": {},
+      "input": {
+        "user_message": "What does a typical day look like for Sarah right now — feed sleep nappy rhythm?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_018",
+      "metadata": {},
+      "input": {
+        "user_message": "How does this week's sleep compare to two weeks ago?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_019",
+      "metadata": {},
+      "input": {
+        "user_message": "On days when Sarah feeds more frequently does he sleep better at night?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_020",
+      "metadata": {},
+      "input": {
+        "user_message": "Is the gap between feeds getting longer as Sarah gets older?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_021",
+      "metadata": {},
+      "input": {
+        "user_message": "What's the longest Sarah has gone without a feed overnight?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_022",
+      "metadata": {},
+      "input": {
+        "user_message": "How has average feed duration changed month by month since birth?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_023",
+      "metadata": {},
+      "input": {
+        "user_message": "How many night feeds between 11pm and 6am did Sarah need each month — is that number falling?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_024",
+      "metadata": {},
+      "input": {
+        "user_message": "Has the number of naps per day decreased over time and if so when did Sarah drop from 4 to 3?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_025",
+      "metadata": {},
+      "input": {
+        "user_message": "What percentage of total daily sleep is happening at night vs during the day and how has that ratio shifted over the months?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_026",
+      "metadata": {},
+      "input": {
+        "user_message": "Are wake windows between naps getting longer week on week?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_027",
+      "metadata": {},
+      "input": {
+        "user_message": "How consistent is Sarah's routine — is the standard deviation in feed intervals getting smaller over time?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_028",
+      "metadata": {},
+      "input": {
+        "user_message": "How did Sarah's sleep and feeding change in the weeks when Calpol was given?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_029",
+      "metadata": {},
+      "input": {
+        "user_message": "Is the amount pumped per session trending up or down and does it correlate with how frequently Sarah feeds directly?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_030",
+      "metadata": {},
+      "input": {
+        "user_message": "How has Sarah's weight gain tracked against the change in feed duration and frequency?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    },
+    {
+      "id": "case_031",
+      "metadata": {},
+      "input": {
+        "user_message": "What's the trend in the longest overnight stretch each week — how quickly is it growing?"
+      },
+      "dataset": "knowledge_base_v1.json",
+      "expected": {
+        "ground": null,
+        "scorers": []
+      }
+    }
+  ]
+}

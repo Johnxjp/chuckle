@@ -12,10 +12,12 @@ Run with ``src`` on ``PYTHONPATH`` (matching the pytest config), e.g.
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,21 +26,18 @@ from dotenv import load_dotenv
 from langchain.agents import AgentExecutor
 
 import db
-from agent import build_agent
+from agent import DEFAULT_MODEL, build_agent
 from prompts import build_system_prompt
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DATASET_PATH = Path(__file__).parent / "datasets" / "knowledge_base_v1.json"
-CASES_PATH = Path(__file__).parent / "cases" / "ground_cases.json"
 _NOW_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def load_eval_env() -> None:
     """Load the eval env file, overriding any prod ``.env`` or shell vars.
 
-    The file is chosen by ``CHUCKLE_ENV_FILE`` (default ``.env.eval``), resolved
-    relative to the project root. ``override=True`` ensures eval credentials win
-    over a real ``.env`` so a prod key can't leak into an eval run.
+    Loads ``.env.eval`` from the project root. ``override=True`` ensures eval
+    credentials win over a real ``.env`` so a prod key can't leak into an eval run.
     """
     env_file = ".env.eval"
     load_dotenv(PROJECT_ROOT / env_file, override=True)
@@ -52,25 +51,25 @@ class EvalRunMetadata:
     agent_model: str
     agent_temperature: float
     agent_max_tokens: int | None
-    dataset_version: str
+    dataset: str  # dataset filename the cases were run against
     system_prompt: str  # exact rendered system prompt sent to the model
     system_prompt_hash: str  # sha256[:12] of system_prompt, for quick comparison
     judge_model: str | None  # model used for LLM-as-judge scorer, if any
 
 
-def load_dataset(dataset_path: Path = DATASET_PATH) -> dict[str, Any]:
+def load_dataset(dataset_path: Path) -> dict[str, Any]:
     """Return a dataset file's ``data`` block (its ``now`` and ``events``)."""
     with dataset_path.open() as f:
         return json.load(f)["data"]
 
 
-def load_events(dataset_path: Path = DATASET_PATH) -> list[dict[str, Any]]:
+def load_events(dataset_path: Path) -> list[dict[str, Any]]:
     """Return the list of event records held in a dataset's ``data.events``."""
     return load_dataset(dataset_path)["events"]
 
 
-def load_cases(cases_path: Path = CASES_PATH) -> list[dict[str, Any]]:
-    """Return the list of eval cases held in a cases JSON file."""
+def load_cases(cases_path: Path) -> dict[str, Any]:
+    """Return a cases JSON file's full contents (its ``dataset`` and ``cases``)."""
     with cases_path.open() as f:
         return json.load(f)
 
@@ -93,8 +92,8 @@ def select_cases(cases: list[dict[str, Any]], names: list[str] | None) -> list[d
 
 
 def init_eval_db(
+    dataset_path: Path,
     events: list[dict[str, Any]] | None = None,
-    dataset_path: Path = DATASET_PATH,
 ) -> sqlite3.Connection:
     """Create an in-memory eval database seeded with the dataset's events.
 
@@ -108,7 +107,7 @@ def init_eval_db(
 
 
 def build_eval_agent(
-    dataset_path: Path = DATASET_PATH,
+    dataset_path: Path,
     model: str | None = None,
     temperature: float = 0.0,
     max_tokens: int | None = None,
@@ -124,7 +123,7 @@ def build_eval_agent(
     """
     data = load_dataset(dataset_path)
     now = datetime.strptime(data["now"], _NOW_FORMAT)
-    conn = init_eval_db(data["events"])
+    conn = init_eval_db(dataset_path, data["events"])
     return build_agent(
         now,
         model=model,
@@ -135,7 +134,7 @@ def build_eval_agent(
     )
 
 
-def render_system_prompt(dataset_path: Path = DATASET_PATH) -> str:
+def render_system_prompt(dataset_path: Path) -> str:
     """Render the exact system prompt the eval agent will use.
 
     ``build_system_prompt`` is a pure function of ``(now, schema_context)``; both
@@ -144,7 +143,7 @@ def render_system_prompt(dataset_path: Path = DATASET_PATH) -> str:
     """
     data = load_dataset(dataset_path)
     now = datetime.strptime(data["now"], _NOW_FORMAT)
-    conn = init_eval_db(data["events"])
+    conn = init_eval_db(dataset_path, data["events"])
     return build_system_prompt(now, db.get_schema_context(conn))
 
 
@@ -163,32 +162,48 @@ def create_run_metadata(config: dict) -> EvalRunMetadata:
         agent_model=config["model"],
         agent_temperature=config.get("temperature", 0.0),
         agent_max_tokens=config.get("max_tokens"),
-        dataset_version=config.get("dataset_version", "v1"),
+        dataset=config["dataset"],
         system_prompt=system_prompt,
         system_prompt_hash=hashlib.sha256(system_prompt.encode()).hexdigest()[:12],
         judge_model=config.get("judge_model"),
     )
 
 
-def run_case(executor: AgentExecutor, case: dict[str, Any]) -> str:
-    """Run one case's ``user_message`` through the agent and return its answer."""
-    result = executor.invoke({"input": case["user_message"], "chat_history": []})
-    return result.get("output", "")
+def serialize_intermediate_steps(steps: list[Any]) -> list[dict[str, Any]]:
+    """Convert an agent's ``intermediate_steps`` into JSON-serialisable dicts.
+
+    Each step is an ``(AgentAction, observation)`` tuple; the action carries the
+    tool name, its input, and the model's reasoning log, and the observation is
+    the tool's returned output.
+    """
+    serialized = []
+    for action, observation in steps:
+        serialized.append(
+            {
+                "tool": getattr(action, "tool", None),
+                "tool_input": getattr(action, "tool_input", None),
+                "log": getattr(action, "log", None),
+                "observation": observation,
+            }
+        )
+    return serialized
+
+
+def run_case(executor: AgentExecutor, case: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    """Run one case through the agent, returning its answer and tool trace."""
+    user_message = case["input"]["user_message"]
+    result = executor.invoke({"input": user_message, "chat_history": []})
+    output = result.get("output", "")
+    intermediate = serialize_intermediate_steps(result.get("intermediate_steps", []))
+    return output, intermediate
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run eval cases through the agent.")
     parser.add_argument(
-        "--cases",
+        "cases",
         type=Path,
-        default=CASES_PATH,
         help="Path to the test-cases JSON file (default: evals/cases/ground_cases.json)",
-    )
-    parser.add_argument(
-        "--dataset",
-        type=Path,
-        default=DATASET_PATH,
-        help="Path to the events dataset used to seed the eval DB",
     )
     parser.add_argument(
         "--case",
@@ -198,9 +213,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Only run the named case; repeatable (e.g. --case case_001 --case case_002)",
     )
     parser.add_argument(
-        "--model",
-        default=None,
-        help="OpenRouter model slug (default: CHUCKLE_MODEL or the agent default)",
+        "--output",
+        type=str,
+        default="./jobs/eval_run_output.json",
+        help="Path to the output file (default: ./jobs/eval_run_output.json)",
     )
     return parser.parse_args(argv)
 
@@ -209,17 +225,53 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     load_eval_env()
 
-    cases = select_cases(load_cases(args.cases), args.case_ids)
+    cases_file = load_cases(args.cases)
+    cases = select_cases(cases_file["cases"], args.case_ids)
     if not cases:
         print("no cases to run")
         return
 
-    executor = build_eval_agent(args.dataset, model=args.model)
-    print(f"running {len(cases)} case(s) against {args.dataset.name}\n")
+    dataset_name = cases_file["dataset"]
+    dataset_path = Path(__file__).parent / "datasets" / dataset_name
+    model = os.environ.get("CHUCKLE_MODEL") or DEFAULT_MODEL
+    executor = build_eval_agent(dataset_path=dataset_path, model=model)
+    print(f"running {len(cases)} case(s) against {dataset_name}\n")
+
+    metadata = create_run_metadata(
+        {
+            "system_prompt": render_system_prompt(dataset_path),
+            "model": model,
+            "temperature": 0.0,
+            "max_tokens": None,
+            "dataset": dataset_name,
+            "judge_model": None,
+        }
+    )
+
+    results = []
     for case in cases:
         print(f"=== {case['id']} ===")
-        print(f"Q: {case['user_message']}")
-        print(f"A: {run_case(executor, case)}\n")
+        print(f"Q: {case['input']['user_message']}")
+        start = time.perf_counter()
+        output, intermediate = run_case(executor, case)
+        time_taken = time.perf_counter() - start
+        print(f"A: {output}\n")
+        results.append(
+            {
+                "case_id": case["id"],
+                "input": case["input"],
+                "output": output,
+                "intermediate_results": intermediate,
+                "time_taken": time_taken,
+            }
+        )
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"metadata": asdict(metadata), "results": results}
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=4, ensure_ascii=False)
+    print(f"wrote {len(results)} result(s) to {output_path}")
 
 
 if __name__ == "__main__":
