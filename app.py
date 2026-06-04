@@ -26,6 +26,42 @@ logfire.instrument_sqlite3()
 
 _SORRY = "Sorry, I couldn't answer that from the data."
 
+# User-facing copy for agent error signals. Terminal kinds become the answer
+# text (shown outside the box, saved to history); the transient retry kind is
+# logged as a line inside the status box.
+_RATE_LIMIT_RETRY_MSG = (
+    "I'm experiencing some technical issues at the moment. Hold on while I try "
+    "again after a short pause."
+)
+_TERMINAL_ERROR_MSGS = {
+    "rate_limit_exhausted": "I'm sorry I couldn't get around the issue. Please try again later",
+    "server_error": (
+        "Sorry, something went wrong. I'm experiencing some technical issues at "
+        "the moment. Can you please try again later"
+    ),
+}
+
+
+def _render_stream(events, status):
+    """Log progress lines into the status box; yield answer text outside it.
+
+    Tool activity and the transient retry notice are written into `status` as a
+    side effect, so they never reach st.write_stream's return value and stay out
+    of saved chat history. Answer tokens and terminal error messages are yielded
+    so they render below the box and are saved as the assistant's response.
+    """
+    for ev in events:
+        if isinstance(ev, agent_module.ToolStatus):
+            status.write(f"Looking up data ({ev.tool})")
+        elif isinstance(ev, agent_module.AgentError):
+            if ev.kind == "rate_limit_retry":
+                status.write(_RATE_LIMIT_RETRY_MSG)
+            else:
+                yield _TERMINAL_ERROR_MSGS[ev.kind]
+        else:
+            yield ev
+
+
 st.set_page_config(page_title="Chuckle", page_icon=None)
 st.title("Chuckle")
 st.write("Upload a Huckleberry CSV and ask questions about it.")
@@ -109,18 +145,22 @@ if question:
     with st.chat_message("user"):
         st.write(question)
     with st.chat_message("assistant"):
+        status = st.status("Processing...", expanded=False)
         try:
-            with (
-                st.spinner("Searching your data..."),
-                logfire.span("user_query", question=question),
-            ):
+            with logfire.span("user_query", question=question):
                 now = datetime.now()
                 history = st.session_state.messages[:-1][-10:]
                 response = st.write_stream(
-                    agent_module.answer(question, now=now, conn=conn, history=history)
+                    _render_stream(
+                        agent_module.answer(question, now=now, conn=conn, history=history),
+                        status,
+                    )
                 )
+            status.update(state="complete", expanded=False)
         except Exception:
             logging.exception("Agent error in UI for question: %r", question)
             response = _SORRY
+            status.update(state="error")
             st.write(response)
     st.session_state.messages.append({"role": "assistant", "content": response})
+    st.rerun()

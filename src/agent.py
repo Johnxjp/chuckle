@@ -8,7 +8,9 @@ import os
 import queue
 import sqlite3
 import threading
+import time
 from collections.abc import Generator
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +22,7 @@ from langchain_core.outputs import LLMResult
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from openai import APIError, RateLimitError
 from opentelemetry import context as otel_context
 
 import db
@@ -29,10 +32,33 @@ DEFAULT_MODEL = "openai/gpt-4o-mini"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _AGENT_STOPPED = "agent stopped due to iteration limit"
 _FALLBACK_MSG = "Sorry, I couldn't answer that from the data."
+
+# Extra attempts after the first 429, and the pause between them.
+RATE_LIMIT_RETRIES = 2
+RATE_LIMIT_PAUSE_SECONDS = 5.0
+
 _SENTINEL = object()
 _FALLBACK = object()
 
 _log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ToolStatus:
+    """Signal that the agent has started running a tool, for UX rendering."""
+
+    tool: str
+
+
+@dataclass(frozen=True)
+class AgentError:
+    """Signal that the agent hit an upstream error, for UX rendering.
+
+    kind is one of: "rate_limit_retry", "rate_limit_exhausted", "server_error".
+    The app maps each kind to a user-facing message.
+    """
+
+    kind: str
 
 
 class _FinalAnswerHandler(BaseCallbackHandler):
@@ -63,6 +89,10 @@ class _FinalAnswerHandler(BaseCallbackHandler):
 
     def on_llm_error(self, error: Exception, **kwargs: Any) -> None:
         self._buffer.clear()
+
+    def on_tool_start(self, serialized: dict, input_str: str, **kwargs: Any) -> None:
+        name = (serialized or {}).get("name") or "tool"
+        self._q.put(ToolStatus(tool=name))
 
 
 def _build_tools(conn: sqlite3.Connection) -> list:
@@ -145,7 +175,7 @@ def answer(
     now: datetime,
     conn: sqlite3.Connection | None = None,
     history: list[dict] | None = None,
-) -> Generator[str, None, None]:
+) -> Generator[str | ToolStatus | AgentError, None, None]:
     """Stream the agent's final answer token by token.
 
     Runs the agent in a daemon thread. Tool-call JSON fragments are filtered
@@ -158,17 +188,38 @@ def answer(
 
     def _run() -> None:
         token = otel_context.attach(ctx)
+        inputs = {"input": question, "chat_history": _to_lc_messages(history or [])}
         try:
             executor = build_agent(now, conn=conn)
-            result = executor.invoke(
-                {"input": question, "chat_history": _to_lc_messages(history or [])},
-                config={"callbacks": [handler]},
-            )
-            output = result.get("output", "")
-            if not output or _AGENT_STOPPED in output.lower():
-                q.put(_FALLBACK)
-            else:
-                logfire.info("agent answered", question=question, answer=output)
+            for attempt in range(RATE_LIMIT_RETRIES + 1):
+                try:
+                    result = executor.invoke(inputs, config={"callbacks": [handler]})
+                except RateLimitError:
+                    _log.warning(
+                        "Rate limited (attempt %d/%d) for question: %r",
+                        attempt + 1,
+                        RATE_LIMIT_RETRIES + 1,
+                        question,
+                    )
+                    logfire.warn("agent rate limited", question=question, attempt=attempt + 1)
+                    if attempt == RATE_LIMIT_RETRIES:
+                        q.put(AgentError("rate_limit_exhausted"))
+                        return
+                    q.put(AgentError("rate_limit_retry"))
+                    time.sleep(RATE_LIMIT_PAUSE_SECONDS)
+                    continue
+                except APIError:
+                    _log.exception("API error for question: %r", question)
+                    logfire.exception("agent api error", question=question)
+                    q.put(AgentError("server_error"))
+                    return
+
+                output = result.get("output", "")
+                if not output or _AGENT_STOPPED in output.lower():
+                    q.put(_FALLBACK)
+                else:
+                    logfire.info("agent answered", question=question, answer=output)
+                return
         except Exception:
             _log.exception("Agent error for question: %r", question)
             logfire.exception("agent error", question=question)
@@ -185,6 +236,8 @@ def answer(
         if item is _FALLBACK:
             if not yielded_any:
                 yield _FALLBACK_MSG
+        elif isinstance(item, (ToolStatus, AgentError)):
+            yield item
         else:
             yield str(item)
             yielded_any = True

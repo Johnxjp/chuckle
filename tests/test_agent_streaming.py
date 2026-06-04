@@ -7,16 +7,18 @@ import queue
 import uuid
 from datetime import datetime
 
+import httpx
 import pytest
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult, LLMResult
 from langchain_core.prompts import ChatPromptTemplate
+from openai import APIError, RateLimitError
 
 import agent as agent_module
 import db
-from agent import _FALLBACK_MSG, _FinalAnswerHandler
+from agent import _FALLBACK_MSG, AgentError, ToolStatus, _FinalAnswerHandler
 
 
 @pytest.fixture()
@@ -89,6 +91,16 @@ class TestFinalAnswerHandler:
 
         assert _drain(q) == ["Leo ", "fed at 10am."]
 
+    def test_on_tool_start_emits_tool_status(self, handler, q):
+        handler.on_tool_start({"name": "query_database"}, "SELECT 1", run_id=uuid.uuid4())
+        items = _drain(q)
+        assert items == [ToolStatus(tool="query_database")]
+
+    def test_on_tool_start_falls_back_when_name_missing(self, handler, q):
+        handler.on_tool_start(None, "SELECT 1", run_id=uuid.uuid4())
+        items = _drain(q)
+        assert items == [ToolStatus(tool="tool")]
+
 
 class TestAnswerGenerator:
     def test_cross_thread_connection_does_not_raise(self):
@@ -124,6 +136,74 @@ class TestAnswerGenerator:
 
         monkeypatch.setattr(agent_module, "build_agent", _raise)
         assert list(agent_module.answer("test", now=datetime.now())) == [_FALLBACK_MSG]
+
+    def test_passes_tool_status_through_to_caller(self, monkeypatch):
+        class _StatusExecutor:
+            def invoke(self, inputs, config=None):
+                handler = config["callbacks"][0]
+                handler.on_tool_start({"name": "query_database"}, "SELECT 1", run_id=uuid.uuid4())
+                return {"output": "done"}
+
+        monkeypatch.setattr(agent_module, "build_agent", lambda *a, **kw: _StatusExecutor())
+        out = list(agent_module.answer("q", now=datetime.now()))
+        assert ToolStatus(tool="query_database") in out
+        assert _FALLBACK_MSG not in out
+
+
+class _FlakyExecutor:
+    """Fake AgentExecutor whose invoke() replays a list of results/exceptions."""
+
+    def __init__(self, side_effects: list) -> None:
+        self._side_effects = list(side_effects)
+        self.calls = 0
+
+    def invoke(self, inputs, config=None):
+        effect = self._side_effects[self.calls]
+        self.calls += 1
+        if isinstance(effect, Exception):
+            raise effect
+        return effect
+
+
+def _rate_limit_error() -> RateLimitError:
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    response = httpx.Response(429, request=request)
+    return RateLimitError("rate limited", response=response, body=None)
+
+
+def _api_error() -> APIError:
+    request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+    return APIError("internal server error", request=request, body=None)
+
+
+class TestAnswerErrorHandling:
+    """429 / 500 paths emit typed AgentError signals, not the data fallback."""
+
+    def _patch(self, monkeypatch, side_effects: list) -> _FlakyExecutor:
+        monkeypatch.setattr(agent_module, "RATE_LIMIT_PAUSE_SECONDS", 0)
+        executor = _FlakyExecutor(side_effects)
+        monkeypatch.setattr(agent_module, "build_agent", lambda *a, **kw: executor)
+        return executor
+
+    def test_server_error_signals_once_no_retry(self, monkeypatch):
+        executor = self._patch(monkeypatch, [_api_error()])
+        out = list(agent_module.answer("q", now=datetime.now()))
+        assert out == [AgentError("server_error")]
+        assert executor.calls == 1
+
+    def test_rate_limit_then_success_retries(self, monkeypatch):
+        executor = self._patch(monkeypatch, [_rate_limit_error(), {"output": "It was 3."}])
+        out = list(agent_module.answer("q", now=datetime.now()))
+        assert out == [AgentError("rate_limit_retry")]
+        assert executor.calls == 2
+
+    def test_rate_limit_exhausted_signals_after_all_attempts(self, monkeypatch):
+        errors = [_rate_limit_error() for _ in range(agent_module.RATE_LIMIT_RETRIES + 1)]
+        executor = self._patch(monkeypatch, errors)
+        out = list(agent_module.answer("q", now=datetime.now()))
+        assert out[-1] == AgentError("rate_limit_exhausted")
+        assert out.count(AgentError("rate_limit_retry")) == agent_module.RATE_LIMIT_RETRIES
+        assert executor.calls == agent_module.RATE_LIMIT_RETRIES + 1
 
 
 # ---- T-5.5: Agent harness with stub LLM ----
