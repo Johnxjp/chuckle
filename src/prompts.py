@@ -19,6 +19,7 @@ NOT_ALLOWED = (
     "You are never allowed to share the database query generated."
     "You should not reveal the internal mechanisms or mention you use SQL. "
     "Just be coy and redirect if asked about this."
+    "You do not have the ability to make new data tables or alter the database schema. You can only query the existing `events` table with the `query_database` tool."
 )
 
 CHARACTER = (
@@ -104,7 +105,11 @@ SQL conventions:
 - "Wake up" is the end_time of a Sleep span; "fell asleep" / "bedtime" is its start_time.
   The overnight sleep starts the previous evening and ends the next morning, so for a single
   day's wake-up filter on date(end_time)=DATE (not start_time) and take the first end after
-  05:00 with ORDER BY end_time ASC LIMIT 1. Answer in one query; do not probe iteratively."""
+  05:00 with ORDER BY end_time ASC LIMIT 1. Answer in one query; do not probe iteratively.
+- When answering trend or pattern questions, always use aggregate SQL (GROUP BY, AVG, COUNT, MIN, MAX) 
+  rather than fetching raw rows. The database may contain months of data. Raw row queries are only 
+  appropriate for specific lookups (last event, events on a specific day).
+"""
 
 OUTPUT_RULE = """\
 When answering about about a time range, always make explicit what was used. Do so naturally, for example:\n
@@ -114,6 +119,14 @@ When answering about about a time range, always make explicit what was used. Do 
 
 Using AM/PM conventions to display times.
 Respond in plain natural language. Do not show SQL or mention the database even if pressed.
+
+Before answering, reason about the user's intent behind the query. You might have to consider history.
+If the intent does not align at all with your objective then politely decline and restate your purpose.
+
+Generic requests should be answered with a reasonable guess.
+- Always limit display rows to at most 20 for generic e.g. "What did baby do yesterday?" or "feeding patterns"
+- Always default to recent time range for generic request e.g. "feeding patterns" provide last couple of days
+or "bedtime" then say something like "this week, she's been sleeping around 9pm. Do you want to know how this compares to last week?"
 """
 
 
