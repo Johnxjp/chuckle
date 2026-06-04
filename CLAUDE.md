@@ -27,6 +27,13 @@ Scope `ruff` to `src` and `tests` only — never lint `notebooks/`.
 `tests` and `pythonpath = ["src"]` are configured in `pyproject.toml`, so test modules import
 `agent`, `db`, `ingest`, `prompts` directly (no `src.` prefix); scraper modules import as `src.scraper.*`.
 
+Code that lives outside `src` and needs `src` modules (e.g. `evals/runner.py`) imports them
+directly too (`import db`) and **must not** manipulate `sys.path`. Run such modules with `src` on
+`PYTHONPATH`, matching the pytest config — e.g. `PYTHONPATH=src uv run python evals/runner.py`.
+
+Do not use `from __future__ import annotations` in new code — the project targets Python 3.12, so
+the modern type-hint syntax (`X | None`, `list[dict]`) already works without it.
+
 ## Configuration
 
 Loaded from `.env` (copy `.env.example`):
