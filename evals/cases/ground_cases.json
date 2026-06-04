@@ -53,7 +53,7 @@
       },
       "dataset": "knowledge_base_v1.json",
       "expected": {
-        "ground": null,
+        "ground": "None. There are no records of Sarah feeding on May 11th, 2026.",
         "scorers": []
       }
     },

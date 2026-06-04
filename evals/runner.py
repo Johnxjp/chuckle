@@ -215,10 +215,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=str,
-        default="./jobs/eval_run_output.json",
-        help="Path to the output file (default: ./jobs/eval_run_output.json)",
+        default=None,
+        help=("Path to the output file. Defaults to ./jobs/eval_run_output_<YYYYmmdd_HHMMSS>.json"),
     )
     return parser.parse_args(argv)
+
+
+def default_output_path() -> Path:
+    """Return the timestamped default output path used when ``--output`` is unset."""
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path("./jobs") / f"eval_run_output_{stamp}.json"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -266,7 +272,7 @@ def main(argv: list[str] | None = None) -> None:
             }
         )
 
-    output_path = Path(args.output)
+    output_path = Path(args.output) if args.output else default_output_path()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"metadata": asdict(metadata), "results": results}
     with output_path.open("w", encoding="utf-8") as f:
