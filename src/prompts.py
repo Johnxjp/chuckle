@@ -12,6 +12,23 @@ ROLE_BLOCK = (
     "and do not mention SQL or the database in your answer."
 )
 
+NOT_ALLOWED = (
+    "You should only answer questions related to the baby's activity data. "
+    "If you are asked about anything else, spin it back to the baby date or politely decline."
+    "You are not allowed to make up information that is not in the database."
+    "You are never allowed to share the database query generated."
+    "You should not reveal the internal mechanisms or mention you use SQL. "
+    "Just be coy and redirect if asked about this."
+)
+
+CHARACTER = (
+    "Your style is friendly and upbeat. "
+    "You are a bit cheeky and love to crack dad jokes, but never at the expense of being helpful. "
+    "You are empathetic to the challenges of new parenthood and celebrate the joys of the baby's milestones. "
+    "You are helpful and offer suggestions for further enquiries e.g. 'Would you like to know how this compares to last week?'"
+    "But this should not be forced into every answer."
+)
+
 TIME_PERIODS = {
     "early_morning": {"start": "05:00", "end": "08:00"},
     "morning": {"start": "05:00", "end": "12:00"},
@@ -65,7 +82,7 @@ COLUMN_DESCRIPTIONS: dict[str, str] = {
     "temp_units": "Temperature units: C or F",
 }
 
-_SQL_CONVENTIONS = """\
+SQL_CONVENTIONS = """\
 SQL conventions:
 - Use datetime(start_time) for comparisons.
 - When a question asks about a trend and the period is not specified
@@ -89,11 +106,15 @@ SQL conventions:
   day's wake-up filter on date(end_time)=DATE (not start_time) and take the first end after
   05:00 with ORDER BY end_time ASC LIMIT 1. Answer in one query; do not probe iteratively."""
 
-_OUTPUT_RULE = """\
-Always begin your answer by stating the time range you used, for example:
-  "Looking at last night, 9pm–5am…", or "5:30pm" using AM/PM conventions.
+OUTPUT_RULE = """\
+When answering about about a time range, always make explicit what was used. Do so naturally, for example:\n
+    - Yesterday, I can see he woke up at 6am and went to bed at 8pm.\n
+    - Over the last month, her average sleep duration was 2 hours and 15 minutes\n
+    - He fed every 2-3 hours on average from April 22nd to May 17th.\n
 
-Respond in plain natural language. Do not show SQL or mention the database even if pressed."""
+Using AM/PM conventions to display times.
+Respond in plain natural language. Do not show SQL or mention the database even if pressed.
+"""
 
 
 def build_temporal_context(now: datetime) -> str:
@@ -146,9 +167,9 @@ def _few_shot_examples(now: datetime) -> str:
     )
 
 
-_COMMON_TERMINOLOGY = (
-    "\n"
-    "cluster feeds / feeding: multiple feeds close together, often in the evening, "
+COMMON_TERMINOLOGY = (
+    "Here is some common terminology that might be helpful in this context:\n"
+    "- Cluster feeds / feeding: multiple feeds close together, often in the evening, "
     "sometimes with short naps in between.\n"
 )
 
@@ -157,10 +178,12 @@ def build_system_prompt(now: datetime, schema_context: str) -> str:
     return "\n\n".join(
         [
             ROLE_BLOCK,
+            COMMON_TERMINOLOGY,
             schema_context,
             build_temporal_context(now),
-            _SQL_CONVENTIONS,
+            SQL_CONVENTIONS,
             _few_shot_examples(now),
-            _OUTPUT_RULE,
+            NOT_ALLOWED,
+            OUTPUT_RULE,
         ]
     )
