@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 import agent as agent_module
 import db
 import ingest
+from constants import FIXED_NOW
 
 load_dotenv()
 
@@ -148,7 +149,7 @@ if question:
         status = st.status("Processing...", expanded=False)
         try:
             with logfire.span("user_query", question=question):
-                now = datetime.now()
+                now = FIXED_NOW or datetime.now()
                 history = st.session_state.messages[:-1][-10:]
                 response = st.write_stream(
                     _render_stream(
