@@ -101,14 +101,35 @@ def _build_tools(conn: sqlite3.Connection) -> list:
         """Run a single read-only SQL SELECT against the events table and
         return the rows as a JSON array. Use this for any question about the
         baby's activity data. Only SELECT is allowed."""
+        _TRUNCATION_THRESHOLD = 100  # rows
         with logfire.span("tool: query_database", sql=sql):
             try:
                 rows = db.run_select(conn, sql)
             except (ValueError, sqlite3.Error) as exc:
                 logfire.warn("query rejected", error=str(exc))
-                return f"ERROR: {exc}"
+                return json.dumps({"status": "error", "message": str(exc)})
             logfire.debug("query returned {row_count} rows", row_count=len(rows))
-            return json.dumps(rows, default=str)
+            truncated = len(rows) > _TRUNCATION_THRESHOLD  # arbitrary truncation threshold
+            if truncated:
+                rows = rows[
+                    :_TRUNCATION_THRESHOLD
+                ]  # very rough truncation to avoid cutting in middle of row
+            logfire.debug("query truncated: {truncated}", truncated=truncated)
+            rows = json.dumps(rows, default=str)
+            return json.dumps(
+                {
+                    "status": "truncated" if truncated else "ok",
+                    "row_count": len(rows),
+                    "rows": rows,
+                    "message": (
+                        f"Too many rows. First {_TRUNCATION_THRESHOLD} rows truncated. There may be more data. "
+                        "Inform the user and suggest narrowing the date range."
+                        if truncated
+                        else None
+                    ),
+                },
+                default=str,
+            )
 
     return [query_database]
 
