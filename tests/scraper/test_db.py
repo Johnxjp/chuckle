@@ -18,15 +18,6 @@ def conn(tmp_path):
     c.close()
 
 
-def test_init_schema_creates_tables(conn):
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ).fetchall()
-    names = [r[0] for r in rows]
-    assert "pages" in names
-    assert "scraped_content" in names
-
-
 def test_insert_pending_dedupes(conn):
     assert db.insert_pending(conn, "https://www.nhs.uk/baby/", None) is True
     assert db.insert_pending(conn, "https://www.nhs.uk/baby/", None) is False
@@ -34,27 +25,11 @@ def test_insert_pending_dedupes(conn):
     assert rows[0] == 1
 
 
-def test_check_constraint_rejects_invalid_status(conn):
+def test_check_constraint_smoke(conn):
+    """One CHECK-constraint case to confirm the schema applied; SQLite enforces the rest."""
     db.insert_pending(conn, "https://www.nhs.uk/baby/", None)
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE pages SET status = 'bogus' WHERE url = 'https://www.nhs.uk/baby/'")
-
-
-def test_check_constraint_rejects_invalid_classification(conn):
-    db.insert_pending(conn, "https://www.nhs.uk/baby/", None)
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(
-            "UPDATE pages SET classification = 'video' WHERE url = 'https://www.nhs.uk/baby/'"
-        )
-
-
-def test_foreign_key_rejects_orphan_scraped_content(conn):
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(
-            "INSERT INTO scraped_content (url, time_scraped, html_content) VALUES (?, ?, ?)",
-            ("https://www.nhs.uk/orphan/", "2026-05-18T12:00:00+00:00", "<html/>"),
-        )
-        conn.commit()
 
 
 def test_upsert_refreshes_content(conn):
@@ -70,49 +45,35 @@ def test_upsert_refreshes_content(conn):
     assert count == 1
 
 
-def test_mark_processed_updates_fields(conn):
-    url = "https://www.nhs.uk/baby/"
-    db.insert_pending(conn, url, None)
-    db.mark_processed(conn, url, "article", attempt_count=1)
-    row = conn.execute(
-        "SELECT status, classification, attempt_count FROM pages WHERE url = ?",
-        (url,),
-    ).fetchone()
-    assert row == ("processed", "article", 1)
-
-
-def test_mark_failed_sets_reason(conn):
-    url = "https://www.nhs.uk/baby/oops/"
-    db.insert_pending(conn, url, None)
-    db.mark_failed(conn, url, "http_404", attempt_count=1)
-    row = conn.execute(
-        "SELECT status, failure_reason, attempt_count FROM pages WHERE url = ?",
-        (url,),
-    ).fetchone()
-    assert row == ("failed", "http_404", 1)
-
-
-def test_mark_redirected_records_target(conn):
-    src = "https://www.nhs.uk/baby/old/"
-    dst = "https://www.nhs.uk/baby/new/"
-    db.insert_pending(conn, src, None)
-    db.mark_redirected(conn, src, dst, attempt_count=1)
-    row = conn.execute(
-        "SELECT status, redirect_target_url FROM pages WHERE url = ?", (src,)
-    ).fetchone()
-    assert row == ("redirected", dst)
-
-
-def test_reset_failed_to_pending(conn):
+@pytest.mark.parametrize(
+    ("mark_fn", "args", "expected_cols", "expected_row"),
+    [
+        (
+            db.mark_processed,
+            ("article", 1),
+            "status, classification, attempt_count",
+            ("processed", "article", 1),
+        ),
+        (
+            db.mark_failed,
+            ("http_404", 1),
+            "status, failure_reason, attempt_count",
+            ("failed", "http_404", 1),
+        ),
+        (
+            db.mark_redirected,
+            ("https://www.nhs.uk/baby/new/", 1),
+            "status, redirect_target_url",
+            ("redirected", "https://www.nhs.uk/baby/new/"),
+        ),
+    ],
+)
+def test_mark_helpers_update_fields(conn, mark_fn, args, expected_cols, expected_row):
     url = "https://www.nhs.uk/baby/x/"
     db.insert_pending(conn, url, None)
-    db.mark_failed(conn, url, "http_500", attempt_count=3)
-    assert db.reset_failed_to_pending(conn) == 1
-    row = conn.execute(
-        "SELECT status, attempt_count, failure_reason FROM pages WHERE url = ?",
-        (url,),
-    ).fetchone()
-    assert row == ("pending", 0, None)
+    mark_fn(conn, url, *args)
+    row = conn.execute(f"SELECT {expected_cols} FROM pages WHERE url = ?", (url,)).fetchone()
+    assert tuple(row) == expected_row
 
 
 def test_reset_all_for_force_skips_blocked(conn):

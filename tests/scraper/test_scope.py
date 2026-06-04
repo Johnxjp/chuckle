@@ -40,9 +40,12 @@ def test_in_scope_rejects_some(url):
         assert not is_in_scope(url)
 
 
-def test_is_exception_url_true():
-    assert is_exception_url("https://www.nhs.uk/pregnancy/labour-and-birth/early-days/")
-
-
-def test_is_exception_url_false():
-    assert not is_exception_url("https://www.nhs.uk/baby/")
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://www.nhs.uk/pregnancy/labour-and-birth/early-days/", True),
+        ("https://www.nhs.uk/baby/", False),
+    ],
+)
+def test_is_exception_url(url, expected):
+    assert is_exception_url(url) is expected

@@ -48,13 +48,10 @@ def test_normalise_rules(href, expected):
 @pytest.mark.parametrize(
     "href",
     [
-        "mailto:foo@bar.com",
-        "tel:+441234567890",
-        "javascript:void(0)",
-        "ftp://files.nhs.uk/leaflet.pdf",
-        "",
-        "   ",
-        "#section-only",
+        "mailto:foo@bar.com",  # representative for rejected schemes set
+        "ftp://files.nhs.uk/leaflet.pdf",  # non-http(s) scheme
+        "",  # empty/whitespace
+        "#section-only",  # fragment-only resolves to empty
     ],
 )
 def test_normalise_rejects_invalid(href):

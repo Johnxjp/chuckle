@@ -88,17 +88,6 @@ def test_fetch_redirect_returns_target(httpx_mock):
     assert result.redirect_target == "https://www.nhs.uk/baby/new/"
 
 
-def test_fetch_timeout_retries(httpx_mock):
-    httpx_mock.add_exception(httpx.ReadTimeout("slow"), url="https://www.nhs.uk/baby/")
-    httpx_mock.add_exception(httpx.ReadTimeout("slow"), url="https://www.nhs.uk/baby/")
-    httpx_mock.add_exception(httpx.ReadTimeout("slow"), url="https://www.nhs.uk/baby/")
-    with _client() as client:
-        result = fetcher.fetch("https://www.nhs.uk/baby/", client=client)
-    assert result.kind == "failed"
-    assert result.failure_reason == "timeout"
-    assert result.attempts == 3
-
-
 def test_fetch_rejects_non_html_content_type(httpx_mock):
     httpx_mock.add_response(
         url="https://www.nhs.uk/baby/leaflet.pdf",

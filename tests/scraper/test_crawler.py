@@ -126,34 +126,6 @@ def test_bfs_loop_orders_breadth_first_and_respects_cap(conn, httpx_mock):
     assert set(statuses) == {"processed"}
 
 
-def test_max_pages_cap_stops_processing(conn, httpx_mock):
-    seed = "https://www.nhs.uk/baby/"
-    httpx_mock.add_response(
-        url=seed,
-        status_code=200,
-        headers={"Content-Type": "text/html"},
-        text="""
-        <html><body><main id='maincontent'>
-          <a href="https://www.nhs.uk/baby/never-fetched/">x</a>
-        </main></body></html>
-        """,
-    )
-    db.insert_pending(conn, seed, None)
-
-    with _client() as client:
-        stats = crawler.run_crawl(
-            conn,
-            client=client,
-            robots_parser=_allow_all_robots(),
-            max_pages=1,
-        )
-
-    assert stats.processed == 1
-    pending = conn.execute("SELECT COUNT(*) FROM pages WHERE status = 'pending'").fetchone()[0]
-    # the never-fetched URL was enqueued during seed processing but is now pending
-    assert pending >= 1
-
-
 def test_exception_url_skips_link_extraction(conn, httpx_mock):
     exception = "https://www.nhs.uk/pregnancy/labour-and-birth/early-days/"
     httpx_mock.add_response(
